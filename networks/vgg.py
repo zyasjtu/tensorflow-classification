@@ -87,7 +87,7 @@ class Vgg():
 		fc8 = fc_layer(fc7, 4096, self.class_num, name='fc8', relu=False)
 
 		prob = tf.nn.softmax(fc8, name='prob')
-		return prob, fc8
+		return prob, fc8, fc7
 
 	def loadModel(self, sess, isFineTuring=False):
 		wData = np.load(self.modelpath, encoding='latin1').item()

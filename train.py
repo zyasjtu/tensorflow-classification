@@ -1,147 +1,65 @@
 import os
-import random
 import sys
 
 import numpy as np
 import tensorflow as tf
 
-import networks.inception_resnet_v2 as inceptionResnetV2
-import networks.inception_v4 as inceptionV4
-import networks.mobilenet_v1 as mobilenetv1
-import networks.resnet_v2 as resnetv2
 import networks.vgg as vgg
 import utils
 
-cfg = utils.get_cfg(sys.argv[1])
-classes_name = os.listdir(cfg['databasedir'])
+classes_name = os.listdir('/volume/tensorflow-classification/data/logos')
+train_set = open('/volume/tensorflow-classification/data/train.txt', 'r')
 classes_id = [str(x) for x in range(len(classes_name))]
-epoch_iter = cfg['epochmax']
-# Mean = np.array(cfg['mean']).reshape((1, 1, 3))
-tensorboard = True
-slim = tf.contrib.slim
-
-def minibatch(file_list, batchsize, w, h):
-	length = len(file_list)
-	i = 0
-	epoch = 0
-	random.shuffle(file_list)
-	while True:
-		if i + batchsize >= length:
-			random.shuffle(file_list)
-			epoch += 1
-			i = 0
-		images = []
-		labels = []
-		for j in range(i, i + batchsize):
-			content = file_list[j]
-			npos = content.index(',')
-			path = content[:npos]
-			classid = content[npos+1:len(content)-1]
-
-			image = utils.load_image(path, w, h)
-			index = classes_id.index(classid)
-			label = np.zeros(len(classes_id), dtype=np.int)
-			label[index] = 1
-
-			images.append(image)
-			labels.append(label)
-		i += batchsize
-		images = np.array(images, dtype=np.float32)
-		labels = np.array(labels, dtype=np.float32)
-		yield epoch, images, labels
+mean = np.array([103.939, 116.779, 123.68])
 
 
-def train(cfg):
-	network = cfg['net']
+def train(isvgg19):
 	print('prepare network...')
-	w = cfg['width']
-	h = cfg['height']
-	if network == 'mobilenetv1':
-		w = int(w * cfg['resolution_multiplier'])
-		h = int(h * cfg['resolution_multiplier'])
-	x = tf.placeholder(dtype=tf.float32, shape=[None, h, w, 3])
-	y = tf.placeholder(dtype=tf.float32, shape=[None, len(classes_id)])
-	if network == 'vgg':
-		if cfg['isvgg19'] == 'true':
-			vgg_network = vgg.Vgg(x, len(classes_id), True, cfg['modelpath'])
-		else:
-			vgg_network = vgg.Vgg(x, len(classes_id), False, cfg['modelpath'])
-		predictions, logits = vgg_network.build()
-		loss = vgg_network.losses(y, logits)
-		accurracy = vgg_network.accurracy(y, logits)
-	elif network == 'inceptionv4':
-		predictions, logits = inceptionV4.inception_v4(x, len(classes_id))
-		loss = inceptionV4.losses(y, logits)
-		accurracy = inceptionV4.accurracy(y, logits)
-	elif network == 'inceptionResnetV2':
-		predictions, logits = inceptionResnetV2.inception_resnet_v2(x, len(classes_id))
-		loss = inceptionResnetV2.losses(y, logits)
-		accurracy = inceptionResnetV2.accurracy(y, logits)
-	elif network == 'resnetv2':
-		predictions, logits = resnetv2.resnet_v2_50(x, len(classes_id))
-		loss = resnetv2.losses(y, logits)
-		accurracy = resnetv2.accurracy(y, logits)
-	elif network == 'mobilenetv1':
-		predictions, logits = mobilenetv1.mobilenet_v1(x, len(classes_id), depth_multiplier=cfg['depth_multiplier'])
-		loss = mobilenetv1.losses(y, logits)
-		accurracy = mobilenetv1.accurracy(y, logits)
+	x = tf.placeholder(dtype=tf.float32, shape=[None, 224, 224, 3])
+	if isvgg19 == 'true':
+		vgg_network = vgg.Vgg(x, len(classes_id), True, './models/vgg19.npy')
 	else:
-		loss = 0
-		accurracy = 0
+		vgg_network = vgg.Vgg(x, len(classes_id), False, './models/vgg16.npy')
+	predictions, logits, feature = vgg_network.build(False)
 
-	if tensorboard:
-		tf.summary.scalar('loss', loss)
-		tf.summary.scalar('acc', accurracy)
-		merge = tf.summary.merge_all()
-		writer = tf.summary.FileWriter(logdir='./summary/')
+	feat_mat = []
+	feat_mean = [0 for i in range(4096)]
+	lines = train_set.readlines()
 
-	if network == 'vgg' and cfg['finetuning'] == 'true':
-		T_list = tf.trainable_variables()
-		V_list = [var for var in T_list if var.name.startswith('fc8')]
-	else:
-		V_list = tf.trainable_variables()
-
-	if cfg['optimizer'] == 'RMSProp':
-		print('Optimizer is RMSProp')
-		optim = tf.train.RMSPropOptimizer(learning_rate=cfg['learningrate'], epsilon=1.0).minimize(loss, var_list=V_list)
-	else:
-		print('Optimizer is GradientDescent')
-		optim = tf.train.GradientDescentOptimizer(learning_rate=cfg['learningrate']).minimize(loss, var_list=V_list)
-
-	print('prepare data...')
-	file_list = utils.load_data(cfg['trainpath'])
-	batch = minibatch(file_list, cfg['batchsize'], cfg['width'], cfg['height'])
-	val_list = utils.load_data(cfg['valpath'])
-	val_batch = minibatch(val_list, cfg['batchsize'], cfg['width'], cfg['height'])
-
-	print('start training...')
+	print('start...')
 	config = tf.ConfigProto()
 	config.gpu_options.allow_growth = True
 	with tf.Session(config=config) as sess:
 		sess.run(tf.global_variables_initializer())
-		if network == 'vgg' and cfg['finetuning'] == 'true':
-			vgg_network.loadModel(sess, True)
-		epoch = 0
-		iteration = 0
-		loss_mean = 0
-		while epoch < epoch_iter:
-			iteration += 1
-			epoch, images, labels = next(batch)
-			if network == 'vgg':
-				images = images - np.array(cfg['mean']).reshape(1, 1, 1, 3)
-			loss_curr, summary, _ = sess.run([loss, merge, optim], feed_dict={x: images, y: labels})
-			loss_mean += loss_curr
-			writer.add_summary(summary, iteration)
-			if (iteration % 500 == 0):
-				print('epoch/iter: [{}/{}], loss_mean: {}'.format(epoch, iteration, loss_mean/500))
-				loss_mean = 0
-				_, val_images, val_labels = next(val_batch)
-				if network == 'vgg':
-					val_images = val_images - np.array(cfg['mean']).reshape(1, 1, 1, 3)
-				cc = sess.run(accurracy, feed_dict={x: val_images, y: val_labels})
-				print('accurracy: {}'.format(cc))
-		writer.close()
-		tf.train.Saver().save(sess, cfg['finetunedpath'])
+		vgg_network.loadModel(sess, True)
+
+		cur_label = '0'
+		cur_count = 0
+		for line in lines:
+			line = line.strip('\n')
+			split_idx = line.find(',')
+			img_path = '/volume/tensorflow-classification/' + line[0:split_idx]
+			img_label = line[split_idx + 1:]
+			img = utils.load_image(img_path, 224, 224)
+			img = img - mean
+			batch1 = img.reshape([1, 224, 224, 3])
+			feat_vec = sess.run(feature, feed_dict={x: batch1})[0]
+			if (cur_label == img_label):
+				cur_count += 1
+				feat_mean += feat_vec
+			else:
+				feat_mean = feat_mean / cur_count
+				feat_mat.append(feat_mean)
+				cur_count = 1
+				cur_label = img_label
+				feat_mean = feat_vec
+			print(line, cur_label, cur_count)
+			print(len(feat_mat), '0' if len(feat_mat) == 0 else len(feat_mat[len(feat_mat) - 1]))
+			assert (cur_label == str(len(feat_mat)))
+		feat_mean = feat_mean / cur_count
+		feat_mat.append(feat_mean)
+		print(len(feat_mat), len(feat_mat[len(feat_mat) - 1]))
+		np.savetxt('feat_mat.txt', feat_mat)
 
 if __name__ == '__main__':
-	train(cfg)
+	train(sys.argv[1])
