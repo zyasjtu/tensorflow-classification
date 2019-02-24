@@ -1,20 +1,25 @@
-import sys
-import tensorflow as tf
-import numpy as np
-import networks.vgg as vgg
-import networks.inception_v4 as inceptionV4
-import networks.inception_resnet_v2 as inceptionResnetV2
-import networks.resnet_v2 as resnetv2
-import networks.mobilenet_v1 as mobilenetv1
-import src.utils as utils
+import os
 import random
+import sys
 
-classes_name = ['person', 'check-in', 'polo', 'goldfish', 'ray', 'electric ray', 'stingray', 'bird', 'cock', 'hen', 'ostrich', 'brambling', 'goldfinch', 'house finch']
-classes_id = ['n00007846', 'n00141669', 'n00477639', 'n01443537', 'n01495701', 'n01496331', 'n01498041', 'n01503061', 'n01514668', 'n01514859', 'n01518878', 'n01530575', 'n01531178', 'n01532829']
-epoch_iter = 200
-Mean = np.array([103.939, 116.779, 123.68]).reshape((1, 1, 3))
+import numpy as np
+import tensorflow as tf
+
+import networks.inception_resnet_v2 as inceptionResnetV2
+import networks.inception_v4 as inceptionV4
+import networks.mobilenet_v1 as mobilenetv1
+import networks.resnet_v2 as resnetv2
+import networks.vgg as vgg
+import utils
+
+cfg = utils.get_cfg(sys.argv[1])
+classes_name = os.listdir(cfg['databasedir'])
+classes_id = [str(x) for x in range(len(classes_name))]
+epoch_iter = cfg['epochmax']
+# Mean = np.array(cfg['mean']).reshape((1, 1, 3))
 tensorboard = True
 slim = tf.contrib.slim
+
 def minibatch(file_list, batchsize, w, h):
 	length = len(file_list)
 	i = 0
@@ -27,7 +32,7 @@ def minibatch(file_list, batchsize, w, h):
 			i = 0
 		images = []
 		labels = []
-		for j in xrange(i, i+batchsize):
+		for j in range(i, i + batchsize):
 			content = file_list[j]
 			npos = content.index(',')
 			path = content[:npos]
@@ -45,8 +50,8 @@ def minibatch(file_list, batchsize, w, h):
 		labels = np.array(labels, dtype=np.float32)
 		yield epoch, images, labels
 
-def train(cfg_path):
-	cfg = utils.get_cfg(cfg_path)
+
+def train(cfg):
 	network = cfg['net']
 	print('prepare network...')
 	w = cfg['width']
@@ -136,11 +141,7 @@ def train(cfg_path):
 				cc = sess.run(accurracy, feed_dict={x: val_images, y: val_labels})
 				print('accurracy: {}'.format(cc))
 		writer.close()
-
-def main():
-	assert(len(sys.argv) > 1)
-	cfg_path = sys.argv[1]
-	train(cfg_path)
+		tf.train.Saver().save(sess, cfg['finetunedpath'])
 
 if __name__ == '__main__':
-	main()
+	train(cfg)

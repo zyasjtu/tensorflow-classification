@@ -1,5 +1,6 @@
-import tensorflow as tf
 from collections import namedtuple
+
+import tensorflow as tf
 
 Conv = namedtuple('Conv', ['kernel', 'stride', 'depth'])
 DepthSepConv = namedtuple('DepthSepConv', ['kernel', 'stride', 'depth'])

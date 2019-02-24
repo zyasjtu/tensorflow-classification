@@ -1,4 +1,3 @@
-import src.utils as utils
 import tensorflow as tf
 
 def conv2d(x, f, kernel_size, strides=1, padding='same', use_batchnorm=True, name=None):

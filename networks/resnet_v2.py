@@ -1,5 +1,6 @@
-import tensorflow as tf
 import collections
+
+import tensorflow as tf
 
 slim = tf.contrib.slim
 

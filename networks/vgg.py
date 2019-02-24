@@ -1,6 +1,6 @@
-import tensorflow as tf
 import numpy as np
-# VGG16 output class number 1000 -> weights: 137,557,696
+import tensorflow as tf
+
 
 def max_pool(x, name):
 	return tf.layers.max_pooling2d(x, pool_size=2, strides=2, padding='same', name=name)
@@ -25,7 +25,7 @@ def fc_layer(x, inputD, outputD, name, relu=False):
 		return out
 
 class Vgg():
-	def __init__(self, im, class_num, isvgg19, modelpath='./models/vgg16.npy'):
+	def __init__(self, im, class_num, isvgg19, modelpath):
 		self.input_x = im
 		self.class_num = class_num
 		self.vgg19 = isvgg19
@@ -90,7 +90,7 @@ class Vgg():
 		return prob, fc8
 
 	def loadModel(self, sess, isFineTuring=False):
-		wData = np.load(self.modelpath, encoding='bytes').item()
+		wData = np.load(self.modelpath, encoding='latin1').item()
 		for name in wData:
 			with tf.variable_scope(name, reuse=True):
 				for p in wData[name]:
@@ -108,8 +108,8 @@ class Vgg():
 							sess.run(tf.get_variable('w', trainable=False).assign(p))
 
 	def losses(self, labels, logits):
-		loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits))
-		#loss = tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
+		loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logits))
+		# loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logits)
 		return loss
 
 	def accurracy(self, labels, logits):
