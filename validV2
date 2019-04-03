@@ -1,0 +1,93 @@
+import sys
+import tensorflow as tf
+import numpy as np
+import networks.vgg as vgg
+import utils
+import os
+
+
+classes_name = os.listdir('/volume/data/Logos')
+train_set = open('/volume/source/tensorflow-classification/data/train.txt', 'r').readlines()
+valid_set = open('/volume/source/tensorflow-classification/data/valid.txt', 'r').readlines()
+classes_id = [str(x) for x in range(len(classes_name))]
+mean = np.array([103.939, 116.779, 123.68])
+centers = np.loadtxt('./models/centers.txt')
+labels = np.loadtxt('./models/labels.txt')
+labels = [int(x) for x in labels]
+
+feat_mat = []
+print('loading feature..')
+for i in range(7):
+	print('part:' + str(i))
+	feat_mat_part = np.loadtxt('./models/feature_mat_part' + str(i) + '.txt')
+	if (i == 0):
+		feat_mat = feat_mat_part
+	else:
+		feat_mat = np.vstack((feat_mat, feat_mat_part))
+print('feature loaded.', len(feat_mat), len(feat_mat[0]))
+
+def valid(isvgg19):
+	print('prepare network...')
+	x = tf.placeholder(dtype=tf.float32, shape=[None, 224, 224, 3])	
+	if isvgg19 == 'true':
+		vgg_network = vgg.Vgg(x, len(classes_id), True, '/volume/model/vgg19.npy')
+	else:
+		vgg_network = vgg.Vgg(x, len(classes_id), False, '/volume/model/vgg16.npy')
+	predictions, logits, feature = vgg_network.build(False)
+
+	print('start...')
+	config = tf.ConfigProto()
+	config.gpu_options.allow_growth = True
+	with tf.Session(config=config) as sess:
+		sess.run(tf.global_variables_initializer())
+		vgg_network.loadModel(sess, True)
+
+		correct_count = 0
+		current_count = 0
+		for line in valid_set:
+			line = line.strip('\n')
+			split_idx = line.find(',')
+			img_path = line[0:split_idx]
+			img_label = line[split_idx+1:]
+			img = utils.load_image(img_path, 224, 224)
+			img = img - mean
+			batch1 = img.reshape([1, 224, 224, 3])
+			feat_vec = sess.run(feature, feed_dict={x: batch1})[0]
+
+			feat_dif_norm = []
+			for i in range(len(centers)):
+				feat_dif = feat_vec - centers[i]
+				feat_dif_norm.append(np.linalg.norm(feat_dif))
+		
+			norm_min = min(feat_dif_norm)
+			min_index = feat_dif_norm.index(norm_min)
+
+                        sample_index = []
+                        for i in range(len(labels)):
+                                if (min_index == labels[i]):
+                                        sample_index.append(i)
+ 
+                        dif_min = sys.maxsize
+                        current_label = '-1'
+                        sample_label = set([])
+                        for i in range(len(sample_index)):
+				sample_label.add(train_set[sample_index[i]].strip('\n').split(',')[1])
+                                feat_sample = feat_mat[sample_index[i]]
+                                dif_norm = np.linalg.norm(feat_vec - feat_sample)
+                                if (dif_norm < dif_min):
+                                        dif_min = dif_norm
+                                        current_label = train_set[sample_index[i]].strip('\n').split(',')[1]
+
+
+			current_count += 1
+			if (img_label == current_label):
+				correct_count += 1
+			else:
+				print(min_index, img_label, classes_name[int(img_label)])
+				print(sample_label)
+                        print(img_path, img_label, classes_name[int(img_label)], current_label, classes_name[int(current_label)], correct_count, current_count)
+		print(correct_count, current_count, float(correct_count) / current_count)
+				
+
+if __name__ == '__main__':
+	valid(sys.argv[1])
